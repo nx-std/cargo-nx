@@ -7,7 +7,7 @@
 //! falls back to them rather than being left blank.
 
 use nx_object::{
-    read::SetLanguage,
+    read::nacp::SetLanguage,
     write::{NacpBuilder, nacp},
 };
 

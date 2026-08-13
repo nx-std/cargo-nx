@@ -20,7 +20,7 @@ cipher = "0.5"
 clap = { version = "4", features = ["derive"] }
 num-bigint = "0.4"
 nx-netloader = { version = "0.1.0", path = "../nx-netloader" }
-nx-object = { git = "https://github.com/nx-std/nx-object.git", rev = "0a01f0d961057798c05e7e652af6af463db2598f", features = ["elf-parsing", "lz4-compression"] }
+nx-object = { git = "https://github.com/nx-std/nx-object.git", rev = "d9b2c686b5dc133fdfb6d497b93c7269749c5f09", features = ["elf-parsing", "lz4-compression"] }
 schemars = { version = "1", optional = true }
 serde = { workspace = true, features = ["std"] }
 serde_derive = "1"
