@@ -4,7 +4,6 @@ members = [
     "cargo-nx",
     "cargo-nx/gen",
     "nx-netloader",
-    "nx-object",
 ]
 
 [workspace.dependencies]

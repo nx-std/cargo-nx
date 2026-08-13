@@ -20,17 +20,17 @@ may depend on which.
 ## 1. Members Live At The Repository Root
 
 A workspace member is a directory at the root, named exactly as the package it contains. There is no
-`crates/` or `bin/` directory to sort members into, and no prefix scheme: the package in `nx-object/` is named
-`nx-object`, and its rule documents, its `-p` flag, and its directory all spell the same string.
+`crates/` or `bin/` directory to sort members into, and no prefix scheme: the package in `nx-netloader/` is
+named `nx-netloader`, and its rule documents, its `-p` flag, and its directory all spell the same string.
 
 A member that exists only to support another member's build nests under it, because it has no independent
 reason to be found. Build-support crates are `publish = false`.
 
 ```toml
-# ❌ Bad — invents a layer the repository does not have; `cargo build -p nx-object` still
-# works, so nothing fails, and the paths silently disagree with every doc and script.
+# ❌ Bad — invents a layer the repository does not have; `cargo build -p nx-netloader`
+# still works, so nothing fails, and the paths silently disagree with every doc and script.
 members = [
-    "crates/nx-object",
+    "crates/nx-netloader",
     "bin/cargo-nx",
 ]
 ```
@@ -42,7 +42,6 @@ members = [
     "cargo-nx",
     "cargo-nx/gen",
     "nx-netloader",
-    "nx-object",
 ]
 ```
 
@@ -56,21 +55,21 @@ sort, instead of both appending to the same last line.
 
 ## 3. Libraries Never Depend On The Binary
 
-`cargo-nx` is the binary crate. It depends on `nx-netloader` and `nx-object`; neither of those, nor any
-library added later, may depend on `cargo-nx`. The edge points one way, always.
+`cargo-nx` is the binary crate. It depends on `nx-netloader`; neither that library, nor any library added
+later, may depend on `cargo-nx`. The edge points one way, always.
 
 The reason is that the libraries are the reusable half. A library that reaches back into the binary drags the
 whole CLI — its argument parser, its logging setup, its subcommand surface — into anything that wants only
-the object-file writer, and the coupling is invisible until someone tries to use the library elsewhere.
+the netload transfer, and the coupling is invisible until someone tries to use the library elsewhere.
 
 A build-support member is the one exception, and it is not a counterexample: it depends on its parent as a
 **build-dependency** to generate an artifact, not to be linked into it.
 
 ```toml
 # ❌ Bad — a library reaching back into the CLI for one helper. The next consumer of
-# nx-object now compiles clap and tokio to write an NRO header.
+# nx-netloader now compiles clap to send an NRO over the network.
 [package]
-name = "nx-object"
+name = "nx-netloader"
 
 [dependencies]
 cargo-nx = { path = "../cargo-nx" }
@@ -78,13 +77,12 @@ cargo-nx = { path = "../cargo-nx" }
 
 ```toml
 # ✅ Good — the binary consumes the libraries and the libraries know nothing of it, so
-# nx-object can be depended on without pulling in a command-line interface.
+# nx-netloader can be depended on without pulling in a command-line interface.
 [package]
 name = "cargo-nx"
 
 [dependencies]
 nx-netloader = { version = "0.1.0", path = "../nx-netloader" }
-nx-object = { version = "0.1.0", path = "../nx-object", features = ["elf", "lz4"] }
 ```
 
 ## 4. A Dependency Shared By Two Members Is Declared Once
@@ -104,7 +102,7 @@ both, so the divergence surfaces as a duplicated crate in the tree rather than a
 [dependencies]
 thiserror = "2.0"
 
-# nx-object/Cargo.toml
+# nx-netloader/Cargo.toml
 [dependencies]
 thiserror = "1.0"
 ```

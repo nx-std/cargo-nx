@@ -436,15 +436,16 @@ Three things stay exact, because they are what the doc is teaching rather than e
 
 - **Third-party and std APIs**: `thiserror`, `tracing`, `tokio`, `std::sync::Arc`. A doc that gets
   these wrong teaches the wrong thing.
-- **The names of the workspace's crates and binaries.** `cargo-nx`, `nx-netloader`, `nx-object` —
-  written as they really are, never disguised. These are the workspace's
+- **The names of the workspace's crates and binaries.** `cargo-nx`, `nx-netloader`, and the
+  dependencies they are built on, such as `nx-object` — written as they really are, never
+  disguised. These are the workspace's
   vocabulary, and a reader who cannot map an example onto the crate it concerns has to translate
   before they can apply the rule, which is the same cost a toy domain imposes. Invented substitutes
   are at their worst in a doc whose subject **is** naming, where the fabrication defeats the lesson.
   What must not follow the name is the crate's **API**: do not import its types or reproduce its
   signatures, because those drift and the name does not.
-- **A workspace crate that a rule names as its subject.** A rule that says "every `nx-object`
-  writer takes `&mut impl Write`" is stating the convention, not citing a module. The test is whether the
+- **A workspace crate that a rule names as its subject.** A rule that says "every `cargo-nx`
+  subcommand returns its own error type" is stating the convention, not citing a module. The test is whether the
   name is the **rule** or the **proof**. Evidence rots; a rule is what the reader came for.
 
 A fabricated example is still written in this workspace's stack and style: it compiles under the workspace

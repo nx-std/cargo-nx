@@ -69,8 +69,8 @@ Clean:
 
 Violations, most severe first, one per line, with the fix:
 
-> `nx-object/src/read/nro.rs:118` — **rust-errors-reporting**: the error enum is declared before the function
-> that returns it. Move `ReadError` after `read_header`.
+> `cargo-nx/src/pack/nro.rs:118` — **rust-errors-reporting**: the error enum is declared before the function
+> that returns it. Move `PackError` after `pack_nro`.
 
 - **Every finding cites the document that states the rule.** A finding with no document behind it is a style
   opinion — drop it.
