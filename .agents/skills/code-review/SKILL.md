@@ -5,9 +5,9 @@ description: Deep review of the working branch — rule compliance, bugs, regres
 
 # Code Review
 
-A thorough review of the current branch of the `nx-std/tools` workspace (`cargo-nx`, `nx-netloader`,
-`nx-object`), run locally. It performs `/code-rules-check` at review depth — fanned out across rule groups —
-and adds what a compliance check cannot see: logic gaps, regressions, security, safety, and soundness.
+A thorough review of the current branch of the `nx-std/tools` workspace (`cargo-nx`, `nx-netloader`), run
+locally. It performs `/code-rules-check` at review depth — fanned out across rule groups — and adds what a
+compliance check cannot see: logic gaps, regressions, security, safety, and soundness.
 
 ## When to Use This Skill
 
@@ -29,7 +29,7 @@ Review for memory-safety and security issues:
 - `unsafe` blocks: precondition documentation, invariant maintenance, raw pointer validity, lifetime soundness
 - Data races / unsynchronized access in `Sync`/`Send` impls
 - Network input handling in `nx-netloader`: bounds checks, untrusted-data validation, integer overflow on length fields
-- Binary parsing in `nx-object`: length and offset validation, out-of-bounds reads, trusting attacker-controlled headers
+- Binary data handed to `nx-object`: length and offset validation before the call, and trust placed in what it parses back
 - Path/file handling in `cargo-nx`: path traversal, untrusted input from manifest files, command-injection in any spawned process
 - Exposed secrets or credentials in code or test data
 - Input validation at any process or network boundary
@@ -66,10 +66,10 @@ compliance with the project's error handling standards.
 
 Verify backwards compatibility is maintained:
 - `cargo-nx` CLI: existing flags, subcommands, and exit codes must not silently change — users script against them
-- `nx-netloader` and `nx-object` public APIs: existing functions, types, and trait signatures must not break consumers
+- `nx-netloader` public API: existing functions, types, and trait signatures must not break consumers
 - Cargo `[features]`: removing or renaming a feature breaks consumers
 - Network protocol compatibility with the on-device nxlink server (if `nx-netloader` touches the wire format)
-- On-disk format compatibility for the object formats `nx-object` reads and writes
+- On-disk format compatibility for the artifacts the packers write through `nx-object`
 
 ### 6. Code Rules Compliance
 

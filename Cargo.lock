@@ -83,12 +83,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "bit_field"
-version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e4b40c7323adcfc0a41c4b88143ed58346ff65a288fc144329c5c45e05d70c6"
-
-[[package]]
 name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -620,8 +614,8 @@ dependencies = [
 [[package]]
 name = "nx-object"
 version = "0.1.0"
+source = "git+https://github.com/nx-std/nx-object.git?rev=0a01f0d961057798c05e7e652af6af463db2598f#0a01f0d961057798c05e7e652af6af463db2598f"
 dependencies = [
- "bit_field",
  "bitflags",
  "fs-err",
  "lz4_flex",

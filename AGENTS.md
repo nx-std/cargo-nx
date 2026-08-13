@@ -69,7 +69,7 @@ guidelines" name the same corpus.
 | **Core**           | `global`       | Fundamental coding standards (error handling, logging, modules)  |
 | **Architectural**  | `global`       | High-level patterns (workspace structure, crate layout)          |
 | **Pattern**        | `global`       | Reusable design patterns (builder, typestate)                    |
-| **Crate-specific** | `crate:<name>` | Patterns for specific crates (`cargo-nx`, `nx-netloader`, `nx-object`) |
+| **Crate-specific** | `crate:<name>` | Patterns for specific crates (`cargo-nx`, `nx-netloader`)         |
 | **Meta**           | `global`       | Documentation format specifications (`docs/__meta__/`)           |
 
 ### Skill Invocation
