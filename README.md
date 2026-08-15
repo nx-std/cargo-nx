@@ -102,11 +102,31 @@ Options: `--titleid=<titleID>`.
 cargo nx npdmtool <json-file> <npdm-file>
 ```
 
+**`hacbrewpack`** -- Pack a homebrew title into an installable NSP.
+
+```
+cargo nx tool hacbrewpack [options]
+```
+
+Reads `exefs/` and `control/` (and `romfs/`, `logo/` unless skipped), builds the program, control,
+optional manual, and metadata NCAs, and writes `<titleid>.nsp`. Needs a keyset carrying `header_key`
+and `key_area_key_application_XX`, taken from `--keyset` or from `./keys.dat`, `./keys.txt`,
+`./keys.ini`, `./prod.keys`, or `$HOME/.switch/prod.keys`.
+
+Options: `--keyset`, `--nspdir`, `--ncadir`, `--backupdir`, `--exefsdir`, `--romfsdir`, `--logodir`,
+`--controldir`, `--htmldocdir`, `--legalinfodir`, `--noromfs`, `--nologo`, `--keygeneration`,
+`--keyareakey`, `--sdkversion`, `--plaintext`, `--keepncadir`, `--nosignncasig2`, `--titleid`,
+`--titlename`, `--titlepublisher`, `--nopatchnacplogo`.
+
+**Note:** `main.npdm` and `control.nacp` are patched in place; the originals are copied into
+`--backupdir` first.
+
 #### Intentional Behavior Differences
 
 The Rust implementations aim for practical compatibility with the original C tools from `switch-tools`, but include the following intentional differences:
 
 - **`nacptool --titleid` validation**: Requires exactly 16 hexadecimal digits, rejecting shorter or invalid inputs that the C version would parse using `scanf`'s `%016llx` format specifier.
+- **`hacbrewpack` builds in memory**: every intermediate is assembled in memory rather than staged through a temporary directory, so `--tempdir` is accepted for compatibility and ignored. Key derivation stops at the master keys: a keyset supplying only console-unique secrets is reported as missing the key it could not derive.
 
 For detailed package format documentation (NRO/NACP fields, NSP/NPDM configuration), see [`cargo-nx/README.md`](cargo-nx/README.md).
 

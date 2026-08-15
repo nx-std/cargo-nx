@@ -13,23 +13,30 @@ description = "Cargo subcommand to simplify creating and building Nintendo Switc
 json-schema = ["dep:schemars"]
 
 [dependencies]
+aes = "0.9"
 anstyle = "1"
 cargo_metadata = { version = "0.23" }
 chrono = "0.4"
 cipher = "0.5"
 clap = { version = "4", features = ["derive"] }
+ctr = "0.10"
 num-bigint = "0.4"
 nx-netloader = { version = "0.1.0", path = "../nx-netloader" }
-nx-object = { git = "https://github.com/nx-std/nx-object.git", rev = "d9b2c686b5dc133fdfb6d497b93c7269749c5f09", features = ["elf-parsing", "lz4-compression"] }
+nx-object = { git = "https://github.com/nx-std/nx-object.git", rev = "8e311d009ab0e9ca3605575cc3746926256f0920", features = ["elf-parsing", "lz4-compression"] }
+rand = "0.8"
+rsa = "0.9"
 schemars = { version = "1", optional = true }
 serde = { workspace = true, features = ["std"] }
 serde_derive = "1"
 serde_json = "1"
+sha2 = "0.10"
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["macros", "rt", "signal", "time"] }
 toml_edit = "0.22"
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+xts-mode = "0.6"
+zerocopy = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

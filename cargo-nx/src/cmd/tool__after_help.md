@@ -13,6 +13,7 @@ Available Utilities:
     nacptool     Create or manipulate NACP control data
     bin2s        Convert binary files to GAS assembly source
     bin2c        Convert binary files to C source (alias: raw2c)
+    hacbrewpack  Pack a homebrew title into an installable NSP
 
 Examples:
     # Show the options for a specific utility
