@@ -9,6 +9,7 @@ pub mod build_romfs;
 pub mod elf2kip;
 pub mod elf2nro;
 pub mod elf2nso;
+pub mod hacbrewpack;
 pub mod nacptool;
 pub mod npdmtool;
 
@@ -39,6 +40,9 @@ pub fn handle_subcommand(args: ToolArgs) -> Result<(), Error> {
         }
         ToolSubcommand::Bin2s(args) => bin2s::handle_subcommand(args).map_err(Error::Bin2s),
         ToolSubcommand::Bin2c(args) => bin2c::handle_subcommand(args).map_err(Error::Bin2c),
+        ToolSubcommand::Hacbrewpack(args) => {
+            hacbrewpack::handle_subcommand(args).map_err(Error::Hacbrewpack)
+        }
     }
 }
 
@@ -83,6 +87,10 @@ pub enum Error {
     /// The `bin2c` utility failed.
     #[error("`bin2c` failed")]
     Bin2c(#[source] bin2c::Error),
+
+    /// The `hacbrewpack` utility failed.
+    #[error("`hacbrewpack` failed")]
+    Hacbrewpack(#[source] hacbrewpack::Error),
 }
 
 impl CliError for Error {}

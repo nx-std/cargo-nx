@@ -3,6 +3,8 @@
 use tracing_subscriber::EnvFilter;
 
 mod cmd;
+mod crypto;
+mod keyset;
 mod logging;
 mod pack;
 mod ui;
@@ -79,6 +81,13 @@ pub struct ToolArgs {
     pub subcommand: ToolSubcommand,
 }
 
+// `hacbrewpack` takes a directory for each of the eight inputs it reads and the three outputs it
+// writes, so its arguments dwarf every other tool's. The enum is built once per process and dropped
+// when the subcommand returns, so the unused space costs nothing worth boxing a `clap::Args` for.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one variant carries a dozen paths; the enum is constructed once per process"
+)]
 #[derive(clap::Subcommand)]
 pub enum ToolSubcommand {
     #[command(
@@ -131,6 +140,12 @@ pub enum ToolSubcommand {
         after_help = include_str!("cmd/tool/bin2c__after_help.md")
     )]
     Bin2c(cmd::tool::bin2c::Args),
+    #[command(
+        name = "hacbrewpack",
+        about = "Pack a homebrew title into an installable NSP",
+        after_help = include_str!("cmd/tool/hacbrewpack__after_help.md")
+    )]
+    Hacbrewpack(cmd::tool::hacbrewpack::Args),
 }
 
 /// Report a command result and resolve it to a process exit code.
