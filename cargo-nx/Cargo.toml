@@ -22,7 +22,7 @@ clap = { version = "4", features = ["derive"] }
 ctr = "0.10"
 num-bigint = "0.4"
 nx-netloader = { version = "0.1.0", path = "../nx-netloader" }
-nx-object = { git = "https://github.com/nx-std/nx-object.git", rev = "e96ee7c16bedf1e76c6784ab8bd683ee1fb16009", features = ["elf-parsing", "lz4-compression"] }
+nx-object = { git = "https://github.com/nx-std/nx-object.git", rev = "8e311d009ab0e9ca3605575cc3746926256f0920", features = ["elf-parsing", "lz4-compression"] }
 rand = "0.8"
 rsa = "0.9"
 schemars = { version = "1", optional = true }
