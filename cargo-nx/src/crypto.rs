@@ -109,6 +109,37 @@ pub fn aes_xts_encrypt(key: &[u8; 0x20], data: &mut [u8], sector_size: usize) {
     xts.encrypt_area(data, sector_size, 0, nintendo_tweak);
 }
 
+/// Decrypt `data` in place with AES-128-XTS, using the console's sector numbering.
+///
+/// The inverse of [`aes_xts_encrypt`], and the first step in reading an archive: an NCA header is
+/// ciphertext on disk, so nothing in it can be trusted — including its length fields — until this
+/// has run.
+///
+/// # Panics
+///
+/// Panics if `data` is not a whole number of sectors. XTS without ciphertext stealing cannot decrypt
+/// a partial one, and the only caller passes a `0xC00`-byte header in `0x200`-byte sectors.
+pub fn aes_xts_decrypt(key: &[u8; 0x20], data: &mut [u8], sector_size: usize) {
+    assert_eq!(
+        data.len() % sector_size,
+        0,
+        "XTS here has no ciphertext stealing, so a partial sector cannot be decrypted"
+    );
+
+    // Split rather than sliced, for the same reason as in `aes_xts_encrypt`: an infallible copy
+    // leaves no error to discard, and a fallback key here would silently produce noise.
+    let mut data_half = [0u8; 0x10];
+    let mut tweak_half = [0u8; 0x10];
+    data_half.copy_from_slice(&key[..0x10]);
+    tweak_half.copy_from_slice(&key[0x10..]);
+
+    let data_key = Aes128::new(&Array::from(data_half));
+    let tweak_key = Aes128::new(&Array::from(tweak_half));
+    let xts = xts_mode::Xts128::new(data_key, tweak_key);
+
+    xts.decrypt_area(data, sector_size, 0, nintendo_tweak);
+}
+
 /// The tweak for `sector`, written big-endian.
 ///
 /// The XTS specification numbers sectors little-endian; the console does not, and an image built
@@ -119,7 +150,10 @@ fn nintendo_tweak(sector: u128) -> Array<u8, U16> {
 
 #[cfg(test)]
 mod tests {
-    use super::{aes_ctr_apply, aes_ecb_decrypt, aes_ecb_encrypt, aes_xts_encrypt, nintendo_tweak};
+    use super::{
+        aes_ctr_apply, aes_ecb_decrypt, aes_ecb_encrypt, aes_xts_decrypt, aes_xts_encrypt,
+        nintendo_tweak,
+    };
 
     #[test]
     fn aes_ecb_decrypt_undoes_aes_ecb_encrypt() {
@@ -170,6 +204,23 @@ mod tests {
             &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
             "the console puts the sector index in the last byte, not the first"
         );
+    }
+
+    #[test]
+    fn aes_xts_decrypt_undoes_aes_xts_encrypt() {
+        //* Given
+        let key = [0x5Cu8; 0x20];
+        let plaintext = [0xA5u8; 0xC00];
+        let mut buffer = plaintext;
+
+        //* When
+        aes_xts_encrypt(&key, &mut buffer, 0x200);
+        let ciphertext = buffer;
+        aes_xts_decrypt(&key, &mut buffer, 0x200);
+
+        //* Then
+        assert_ne!(ciphertext, plaintext, "encryption should change the bytes");
+        assert_eq!(buffer, plaintext, "decryption should undo it");
     }
 
     #[test]

@@ -16,11 +16,7 @@ use nx_object::write::nca::{PlainNca, SECTION_KEY_INDEX};
 use sha2::{Digest as _, Sha256};
 use zerocopy::IntoBytes as _;
 
-use super::signing;
 use crate::crypto::{aes_ctr_apply, aes_ecb_encrypt, aes_xts_encrypt};
-
-/// The `0x200` bytes of the header that both signatures cover, starting at the magic.
-const SIGNED_RANGE: std::ops::Range<usize> = 0x200..0x400;
 
 /// Sector size the header is encrypted in.
 const HEADER_SECTOR_SIZE: usize = 0x200;
@@ -94,8 +90,8 @@ pub fn finish(
     aes_ecb_encrypt(keys.key_area_key, header.encrypted_keys.as_flattened_mut());
 
     if sign_header {
-        let signed = &header.as_bytes()[SIGNED_RANGE];
-        header.npdm_key_sig = signing::sign_header(signed).map_err(FinishError)?;
+        let signed = &header.as_bytes()[crate::signing::SIGNED_RANGE];
+        header.npdm_key_sig = crate::signing::sign_header(signed).map_err(FinishError)?;
     }
 
     let mut bytes = header.as_bytes().to_vec();
@@ -113,4 +109,4 @@ pub fn finish(
 /// the builder produced.
 #[derive(Debug, thiserror::Error)]
 #[error("the program NCA header could not be signed")]
-pub struct FinishError(#[source] pub signing::SignError);
+pub struct FinishError(#[source] pub crate::signing::SignError);

@@ -12,6 +12,10 @@
 //! Both signatures cover the `0x200` bytes of the header starting at its magic, not the header as a
 //! whole, so signing happens after every field in that range is final and before the header is
 //! encrypted.
+//!
+//! Because the keypair is built in rather than secret, the same module verifies as well as signs:
+//! [`verify_header`] is what lets a title this tool packed be checked back against the key it was
+//! packed with. The fixed-key signature has no counterpart here — its modulus lives in the console.
 
 use rsa::{
     RsaPrivateKey,
@@ -23,6 +27,12 @@ use sha2::Sha256;
 
 /// Bytes in an RSA-2048 signature, and in the modulus that verifies it.
 pub const SIGNATURE_SIZE: usize = 0x100;
+
+/// The `0x200` bytes of an NCA header that both signatures cover, starting at the magic.
+///
+/// Not the header as a whole: everything past the FS headers sits outside what either signature
+/// proves. Signing and verifying both index the header with this, so the two cannot drift apart.
+pub const SIGNED_RANGE: std::ops::Range<usize> = 0x200..0x400;
 
 /// The private half, as PKCS#1 PEM.
 const PRIVATE_KEY_PEM: &str = include_str!("signing_key.pem");
@@ -83,6 +93,51 @@ pub fn sign_header(data: &[u8]) -> Result<[u8; SIGNATURE_SIZE], SignError> {
         })
 }
 
+/// Check `signature` against `data` under the built-in public key.
+///
+/// This is the second of the two signatures an NCA header carries. The first is checked against a
+/// modulus built into the console, which is not reproduced here and cannot be — an archive's
+/// `fixed_key_sig` is therefore not checkable by this tool at all.
+///
+/// # Errors
+///
+/// Returns an error if the built-in modulus cannot form a public key, or if the signature does not
+/// verify — which means the header was altered after it was signed, or signed by another key.
+pub fn verify_header(data: &[u8], signature: &[u8; SIGNATURE_SIZE]) -> Result<(), VerifyError> {
+    let modulus = rsa::BigUint::from_bytes_be(&PUBLIC_MODULUS);
+    let public_key = rsa::RsaPublicKey::new(modulus, rsa::BigUint::from(PUBLIC_EXPONENT))
+        .map_err(VerifyError::PublicKey)?;
+    let verifying_key = rsa::pss::VerifyingKey::<Sha256>::new(public_key);
+
+    let signature =
+        rsa::pss::Signature::try_from(signature.as_slice()).map_err(VerifyError::Malformed)?;
+
+    rsa::signature::Verifier::verify(&verifying_key, data, &signature)
+        .map_err(VerifyError::Rejected)
+}
+
+/// Public exponent of the built-in keypair, which is the one RSA conventionally uses.
+const PUBLIC_EXPONENT: u32 = 65537;
+
+/// Error returned by [`verify_header`].
+#[derive(Debug, thiserror::Error)]
+pub enum VerifyError {
+    /// The built-in modulus could not be formed into a public key.
+    ///
+    /// Does not depend on the archive, so this means the build is broken rather than the input.
+    #[error("the built-in modulus could not be formed into a public key")]
+    PublicKey(#[source] rsa::errors::Error),
+    /// The stored bytes are not a well-formed RSA-2048-PSS signature.
+    #[error("the header signature is malformed")]
+    Malformed(#[source] rsa::signature::Error),
+    /// The signature does not verify against the signed range.
+    ///
+    /// The header was altered after it was signed, or it was signed by a different key — an archive
+    /// built with `--nosignncasig2`, or by another tool, carries no signature this key can check.
+    #[error("the header signature does not verify")]
+    Rejected(#[source] rsa::signature::Error),
+}
+
 /// Error returned by [`sign_header`].
 #[derive(Debug, thiserror::Error)]
 pub enum SignError {
@@ -101,7 +156,7 @@ pub enum SignError {
 
 #[cfg(test)]
 mod tests {
-    use super::{SIGNATURE_SIZE, acid_public_key, sign_header};
+    use super::{SIGNATURE_SIZE, sign_header, verify_header};
 
     #[test]
     fn sign_header_produces_a_full_width_signature() {
@@ -116,28 +171,52 @@ mod tests {
     }
 
     #[test]
-    fn sign_header_produces_a_signature_the_patched_public_key_verifies() {
+    fn verify_header_with_a_signature_this_key_produced_succeeds() {
         //* Given
         // The whole point of the pair: what the NPDM advertises must verify what signs the header.
         let header = [0x42u8; 0x200];
         let signature = sign_header(&header).expect("the built-in key should sign");
 
         //* When
-        let modulus = rsa::BigUint::from_bytes_be(acid_public_key());
-        let public_key = rsa::RsaPublicKey::new(modulus, rsa::BigUint::from(65537u32))
-            .expect("the built-in modulus should form a public key");
-        let verifying_key = rsa::pss::VerifyingKey::<sha2::Sha256>::new(public_key);
-        let result = rsa::signature::Verifier::verify(
-            &verifying_key,
-            &header,
-            &rsa::pss::Signature::try_from(signature.as_slice())
-                .expect("a 0x100-byte signature should convert"),
-        );
+        let result = verify_header(&header, &signature);
 
         //* Then
         assert!(
             result.is_ok(),
             "the console checks the header against exactly this key"
         );
+    }
+
+    #[test]
+    fn verify_header_with_an_altered_signed_range_fails() {
+        //* Given
+        let header = [0x42u8; 0x200];
+        let signature = sign_header(&header).expect("the built-in key should sign");
+        let mut altered = header;
+        altered[0x10] = 0x43;
+
+        //* When
+        let result = verify_header(&altered, &signature);
+
+        //* Then
+        assert!(
+            result.is_err(),
+            "a header changed after signing must not verify"
+        );
+    }
+
+    #[test]
+    fn verify_header_with_an_all_zero_signature_fails() {
+        //* Given
+        // An unsigned header leaves the field zeroed. Callers that must tell "unsigned" from
+        // "wrong" check the field first; this only promises that zeros never verify.
+        let header = [0x42u8; 0x200];
+        let signature = [0u8; SIGNATURE_SIZE];
+
+        //* When
+        let result = verify_header(&header, &signature);
+
+        //* Then
+        assert!(result.is_err(), "an unsigned header must not verify");
     }
 }

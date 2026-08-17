@@ -20,11 +20,9 @@ use nx_object::{
 };
 
 mod archive;
-mod keyset_file;
 mod nacp;
 mod npdm;
 mod settings;
-mod signing;
 mod title_id;
 
 use self::{
@@ -32,7 +30,7 @@ use self::{
     settings::{KeyAreaKey, SdkVersion},
     title_id::TitleId,
 };
-use crate::ui;
+use crate::{keyset, ui};
 
 /// Bytes of archive one hash covers in an executable partition.
 const EXEFS_HASH_BLOCK_SIZE: u32 = 0x10000;
@@ -47,7 +45,7 @@ const SMALL_HASH_BLOCK_SIZE: u32 = 0x1000;
 /// Returns an error if the keyset is missing or incomplete, if an input directory cannot be read, if
 /// the descriptor or control property is malformed, or if an output cannot be written.
 pub fn handle_subcommand(args: Args) -> Result<(), Error> {
-    let keyset = keyset_file::load(args.keyset.as_deref()).map_err(Error::LoadKeyset)?;
+    let keyset = keyset::file::load(args.keyset.as_deref()).map_err(Error::LoadKeyset)?;
 
     let header_key = keyset.header_key().ok_or(Error::MissingHeaderKey)?;
     let key_area_key =
@@ -540,7 +538,7 @@ impl Args {
 pub enum Error {
     /// The keyset could not be found, read, or parsed.
     #[error("failed to load the keyset")]
-    LoadKeyset(#[source] keyset_file::LoadError),
+    LoadKeyset(#[source] keyset::file::LoadError),
 
     /// The keyset carries no key to encrypt an archive header with.
     #[error("the keyset carries no `header_key`, and none can be derived from it")]
