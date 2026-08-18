@@ -737,7 +737,7 @@ dependencies = [
 [[package]]
 name = "nx-object"
 version = "0.1.0"
-source = "git+https://github.com/nx-std/nx-object.git?rev=8e311d009ab0e9ca3605575cc3746926256f0920#8e311d009ab0e9ca3605575cc3746926256f0920"
+source = "git+https://github.com/nx-std/nx-object.git?rev=3283a5540d8330d6b7f0e3af5c0247f0a981479c#3283a5540d8330d6b7f0e3af5c0247f0a981479c"
 dependencies = [
  "bitflags",
  "fs-err",

@@ -10,7 +10,7 @@
 
 use nx_object::read::npdm::Npdm;
 
-use super::{signing, title_id::TitleId};
+use super::title_id::TitleId;
 
 /// Offset of the title ID within the ACI0 section.
 const ACI0_PROGRAM_ID_OFFSET: usize = 0x10;
@@ -60,9 +60,9 @@ pub fn process(descriptor: &mut [u8], patch: &Patch) -> Result<TitleId, ProcessE
     if patch.sign_program_header {
         let start = acid_offset + ACID_PUBLIC_KEY_OFFSET;
         let slot = descriptor
-            .get_mut(start..start + signing::SIGNATURE_SIZE)
+            .get_mut(start..start + crate::signing::SIGNATURE_SIZE)
             .ok_or(ProcessError::PatchOutOfBounds { offset: start })?;
-        slot.copy_from_slice(signing::acid_public_key());
+        slot.copy_from_slice(crate::signing::acid_public_key());
     }
 
     Ok(title_id)

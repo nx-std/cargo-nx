@@ -15,12 +15,15 @@
 //! homebrew carries; a file that supplies neither a master key nor a derived key for the generation
 //! asked for is reported as missing it.
 //!
-//! This module does not read files. A keyset arrives as text and is parsed at the boundary that read
-//! it, so nothing here has to be told where a keyset lives.
+//! Parsing here takes text and nothing else: a keyset arrives already read, so this file has no
+//! opinion on where one lives. Finding and reading it is [`file`]'s job, which is what keeps the
+//! derivation below testable from a string literal.
 
 use std::collections::HashMap;
 
 use nx_object::write::nca::KeyGeneration;
+
+pub mod file;
 
 use crate::crypto::aes_ecb_decrypt;
 

@@ -10,6 +10,7 @@ pub mod elf2kip;
 pub mod elf2nro;
 pub mod elf2nso;
 pub mod hacbrewpack;
+pub mod hactool;
 pub mod nacptool;
 pub mod npdmtool;
 
@@ -43,6 +44,7 @@ pub fn handle_subcommand(args: ToolArgs) -> Result<(), Error> {
         ToolSubcommand::Hacbrewpack(args) => {
             hacbrewpack::handle_subcommand(args).map_err(Error::Hacbrewpack)
         }
+        ToolSubcommand::Hactool(args) => hactool::handle_subcommand(args).map_err(Error::Hactool),
     }
 }
 
@@ -91,6 +93,10 @@ pub enum Error {
     /// The `hacbrewpack` utility failed.
     #[error("`hacbrewpack` failed")]
     Hacbrewpack(#[source] hacbrewpack::Error),
+
+    /// The `hactool` utility failed.
+    #[error("`hactool` failed")]
+    Hactool(#[source] hactool::Error),
 }
 
 impl CliError for Error {}
