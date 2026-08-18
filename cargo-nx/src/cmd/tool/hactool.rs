@@ -1,9 +1,10 @@
 //! `hactool` subcommand — read, verify, and extract the archives the console loads.
 //!
 //! The inverse of `hacbrewpack`, and deliberately narrower than the tool it is named for: it reads
-//! what this workspace can produce — an NCA and the NSP that carries one — and says so plainly when
-//! handed anything else. Gamecard images, boot packages, savedata, and update partitions are out of
-//! scope, because nothing here builds them and nothing here could test a reader for them.
+//! what this workspace can produce — an NCA, the NSP that carries one, and the KIP1 `elf2kip`
+//! emits — and says so plainly when handed anything else. Gamecard images, boot packages, savedata,
+//! and update partitions are out of scope, because nothing here builds them and nothing here could
+//! test a reader for them.
 //!
 //! Two limits are worth knowing before reading the output. An NCA carries two signatures and only
 //! the second is checkable here: the first is verified against a modulus that lives in the console.
@@ -16,12 +17,18 @@
 use std::path::{Path, PathBuf};
 
 use nx_object::{
-    raw::nca::{NCA_SECTION_COUNT, NcaContentType, NcaCryptType, NcaFsType},
+    raw::{
+        cnmt::{CnmtContentMetaType, CnmtContentType},
+        nca::{NCA_SECTION_COUNT, NcaContentType, NcaCryptType, NcaFsType},
+    },
     read::{
+        cnmt::{self, Cnmt},
+        kip::{self, Kip1},
         nca::{Nca, NcaSection, Superblock},
         pfs0::{self, Pfs0},
     },
 };
+use sha2::{Digest as _, Sha256};
 
 mod extract;
 
@@ -36,6 +43,12 @@ use crate::{
 
 /// Magic identifying a PFS0, which is how an NSP is told from an NCA without being asked.
 const PFS0_MAGIC: &[u8; 4] = b"PFS0";
+
+/// Magic identifying a KIP1, which leads the file in the clear.
+const KIP1_MAGIC: &[u8; 4] = b"KIP1";
+
+/// Suffix the archive carrying a title's content meta is named with.
+const META_SUFFIX: &str = ".cnmt.nca";
 
 /// Handle the `hactool` invocation.
 ///
@@ -54,6 +67,7 @@ pub fn handle_subcommand(args: Args) -> Result<(), Error> {
     match args.intype.unwrap_or_else(|| detect(&image)) {
         InputType::Nsp => handle_nsp(&args, &image),
         InputType::Nca => handle_nca(&args, &image),
+        InputType::Kip => handle_kip(&args, &image),
     }
 }
 
@@ -62,6 +76,10 @@ fn handle_nsp(args: &Args, image: &[u8]) -> Result<(), Error> {
     let pfs0 = Pfs0::try_from_bytes(image).map_err(Error::ParseNsp)?;
 
     ui::raw(&render_nsp(&pfs0));
+
+    if args.verify {
+        ui::raw(&render_package_verification(args, &pfs0)?);
+    }
 
     if let Some(dir) = &args.outdir {
         let written = extract::partition(image, dir).map_err(Error::ExtractNsp)?;
@@ -82,6 +100,10 @@ fn handle_nca(args: &Args, image: &[u8]) -> Result<(), Error> {
     let archive = Nca::try_from_bytes(&plain.bytes).map_err(Error::ParseNca)?;
 
     ui::raw(&render_nca(&archive, &plain));
+
+    if let Some(rendered) = render_cnmt(&archive) {
+        ui::raw(&rendered);
+    }
 
     if args.verify {
         ui::raw(&render_verification(&archive, &plain));
@@ -130,6 +152,210 @@ fn extract_sections(args: &Args, archive: &Nca<'_>) -> Result<(), Error> {
     Ok(())
 }
 
+/// Read, report, and extract a KIP1.
+///
+/// A KIP1 carries no keys and no signature, so this path needs neither a keyset nor `--verify`:
+/// there is nothing to decrypt and nothing to check a signature against.
+fn handle_kip(args: &Args, image: &[u8]) -> Result<(), Error> {
+    let kip = Kip1::try_from_bytes(image).map_err(Error::ParseKip)?;
+
+    ui::raw(&render_kip(&kip));
+
+    let Some(dir) = &args.outdir else {
+        return Ok(());
+    };
+
+    for segment in kip.segments() {
+        let bytes = segment.decompress().map_err(Error::DecompressSegment)?;
+        let name = format!("{}.bin", segment_name(segment.index()));
+        extract::raw(&bytes, &dir.join(name)).map_err(Error::WriteSegment)?;
+    }
+
+    ui::status("Extracted", &format!("4 segments to {}", dir.display()));
+
+    Ok(())
+}
+
+/// Render a KIP1's header and every segment it carries.
+fn render_kip(kip: &Kip1<'_>) -> String {
+    let mut out = String::from("KIP1:\n");
+    out.push_str(&format!("  Name:            {}\n", kip.name()));
+    out.push_str(&format!("  Title ID:        {:016x}\n", kip.title_id()));
+    out.push_str(&format!("  Flags:           {:#04x}\n", kip.header().flags));
+
+    for segment in kip.segments() {
+        out.push_str(&format!(
+            "  Segment {} ({}):\n",
+            segment.index(),
+            segment_name(segment.index())
+        ));
+        out.push_str(&format!("    Address:       {:#x}\n", segment.address()));
+        out.push_str(&format!(
+            "    Stored:        {} bytes{}\n",
+            segment.stored().len(),
+            if segment.is_compressed() {
+                " (BLZ)"
+            } else {
+                ""
+            }
+        ));
+        out.push_str(&format!(
+            "    Expanded:      {} bytes\n",
+            segment.decompressed_size()
+        ));
+    }
+
+    out
+}
+
+/// The name segment `index` is known by, which is what an extracted file is called.
+fn segment_name(index: usize) -> &'static str {
+    match index {
+        0 => "text",
+        1 => "rodata",
+        2 => "data",
+        _ => "bss",
+    }
+}
+
+/// Render the content meta an archive carries, when it is the one that carries it.
+///
+/// Returns `None` for every archive but the meta: only that one holds a CNMT, and a caller asking
+/// for the records of a program archive is asking for something that is not there.
+fn render_cnmt(archive: &Nca<'_>) -> Option<String> {
+    if archive.content_type() != NcaContentType::Meta {
+        return None;
+    }
+
+    // The meta archive holds one PFS0 section, and the CNMT is the single file in it.
+    let section = archive.sections().next()?;
+    let pfs0 = Pfs0::try_from_bytes(section.data()).ok()?;
+    let file = pfs0.files().next()?;
+    let cnmt = Cnmt::try_from_bytes(file.data()).ok()?;
+
+    let mut out = String::from("Content meta:\n");
+    out.push_str(&format!("  Title ID:        {:016x}\n", cnmt.title_id()));
+    out.push_str(&format!("  Title version:   {}\n", cnmt.title_version()));
+    out.push_str(&format!(
+        "  Meta type:       {}\n",
+        meta_type_name(cnmt.meta_type())
+    ));
+
+    for record in cnmt.records() {
+        out.push_str(&format!(
+            "    {:<18} {} ({} bytes)\n",
+            content_type_label(record.content_type()),
+            hex(record.nca_id()),
+            record.size()
+        ));
+    }
+
+    Some(out)
+}
+
+/// The name a content meta type is reported under.
+fn meta_type_name(meta_type: Option<CnmtContentMetaType>) -> &'static str {
+    match meta_type {
+        Some(CnmtContentMetaType::Application) => "Application",
+        Some(CnmtContentMetaType::Patch) => "Patch",
+        Some(CnmtContentMetaType::AddOnContent) => "AddOnContent",
+        Some(CnmtContentMetaType::Delta) => "Delta",
+        None => "(unrecognized)",
+    }
+}
+
+/// The label a content record's type is listed under.
+fn content_type_label(content_type: Option<CnmtContentType>) -> &'static str {
+    match content_type {
+        Some(CnmtContentType::Meta) => "Meta",
+        Some(CnmtContentType::Program) => "Program",
+        Some(CnmtContentType::Data) => "Data",
+        Some(CnmtContentType::Control) => "Control",
+        Some(CnmtContentType::HtmlDocument) => "HtmlDocument",
+        Some(CnmtContentType::LegalInformation) => "LegalInformation",
+        Some(CnmtContentType::DeltaFragment) => "DeltaFragment",
+        None => "(unrecognized)",
+    }
+}
+
+/// Check every archive in a package against the content meta that names it.
+///
+/// This is the check a package as a whole can fail while each of its archives passes: an NCA whose
+/// own hashes verify can still be the wrong file, the wrong size, or missing entirely, and only the
+/// content meta says which files should be there.
+///
+/// Opening the meta archive needs the keyset, so unlike listing or extracting a package, this
+/// cannot run without one.
+fn render_package_verification(args: &Args, pfs0: &Pfs0<'_>) -> Result<String, Error> {
+    let Some(meta_file) = pfs0.files().find(|file| file.name().ends_with(META_SUFFIX)) else {
+        return Ok(format!(
+            "Package:\n  {:<32} no {META_SUFFIX} in the package\n",
+            "content meta"
+        ));
+    };
+
+    let keyset = keyset::file::load(args.keyset.as_deref()).map_err(Error::LoadKeyset)?;
+    let plain = nca::decrypt(meta_file.data(), &keyset).map_err(Error::Decrypt)?;
+    let archive = Nca::try_from_bytes(&plain.bytes).map_err(Error::ParseNca)?;
+
+    let section = archive.sections().next().ok_or(Error::MetaWithoutSection)?;
+    let meta_partition = Pfs0::try_from_bytes(section.data()).map_err(Error::ParseNsp)?;
+    let cnmt_file = meta_partition
+        .files()
+        .next()
+        .ok_or(Error::MetaWithoutSection)?;
+    let cnmt = Cnmt::try_from_bytes(cnmt_file.data()).map_err(Error::ParseCnmt)?;
+
+    let mut out = String::from("Package:\n");
+    out.push_str(&format!(
+        "  {:<32} {} records\n",
+        "content meta",
+        cnmt.record_count()
+    ));
+
+    for record in cnmt.records() {
+        let name = format!("{}.nca", hex(record.nca_id()));
+        let label = format!(
+            "{} {}",
+            content_type_label(record.content_type()),
+            &name[..16]
+        );
+
+        let Some(file) = pfs0.file_by_name(&name) else {
+            out.push_str(&outcome(
+                &label,
+                Err(format!("'{name}' is not in the package")),
+            ));
+            continue;
+        };
+
+        if file.data().len() as u64 != record.size() {
+            out.push_str(&outcome(
+                &label,
+                Err(format!(
+                    "recorded {} bytes, package holds {}",
+                    record.size(),
+                    file.data().len()
+                )),
+            ));
+            continue;
+        }
+
+        let digest: [u8; 0x20] = Sha256::digest(file.data()).into();
+        if &digest != record.hash() {
+            out.push_str(&outcome(
+                &label,
+                Err("content hash does not match".to_owned()),
+            ));
+            continue;
+        }
+
+        out.push_str(&outcome(&label, Ok(())));
+    }
+
+    Ok(out)
+}
+
 /// Which kind of container `image` is, judged by what leads it.
 ///
 /// An NCA cannot be recognized this way — its header is ciphertext — so anything that is not a PFS0
@@ -137,6 +363,7 @@ fn extract_sections(args: &Args, archive: &Nca<'_>) -> Result<(), Error> {
 fn detect(image: &[u8]) -> InputType {
     match image.get(..4) {
         Some(magic) if magic == PFS0_MAGIC => InputType::Nsp,
+        Some(magic) if magic == KIP1_MAGIC => InputType::Kip,
         _ => InputType::Nca,
     }
 }
@@ -298,6 +525,8 @@ pub enum InputType {
     Nca,
     /// A submission package, which is a PFS0 holding archives.
     Nsp,
+    /// A kernel initial process image.
+    Kip,
 }
 
 #[derive(clap::Args)]
@@ -314,6 +543,9 @@ pub struct Args {
     pub intype: Option<InputType>,
 
     /// Check the header signature and every hash covering the archive
+    ///
+    /// For a package this also checks every archive against the content meta naming it, which needs
+    /// the keyset the metadata archive was sealed with.
     #[arg(long)]
     pub verify: bool,
 
@@ -321,7 +553,7 @@ pub struct Args {
     #[arg(long)]
     pub plaintext: Option<PathBuf>,
 
-    /// Directory the files of an NSP are extracted to
+    /// Directory the files of an NSP, or the segments of a KIP1, are extracted to
     #[arg(long)]
     pub outdir: Option<PathBuf>,
 
@@ -393,6 +625,24 @@ pub enum Error {
     /// The input is not a valid NSP.
     #[error("failed to parse the package")]
     ParseNsp(#[source] pfs0::FromBytesError),
+    /// The input is not a valid KIP1.
+    #[error("failed to parse the KIP1 image")]
+    ParseKip(#[source] kip::FromBytesError),
+    /// The content meta could not be read.
+    #[error("failed to parse the content meta")]
+    ParseCnmt(#[source] cnmt::FromBytesError),
+    /// The metadata archive carries no section holding a content meta.
+    ///
+    /// A meta archive is one PFS0 section holding one CNMT, so an archive without them is not the
+    /// metadata archive its name claims.
+    #[error("the metadata archive holds no content meta")]
+    MetaWithoutSection,
+    /// A KIP1 segment could not be expanded.
+    #[error("failed to expand a KIP1 segment")]
+    DecompressSegment(#[source] kip::DecompressError),
+    /// A KIP1 segment could not be written.
+    #[error("failed to write a KIP1 segment")]
+    WriteSegment(#[source] extract::WriteError),
     /// The decrypted archive could not be written.
     #[error("failed to write the decrypted archive")]
     WritePlaintext(#[source] extract::WriteError),
@@ -414,7 +664,9 @@ impl CliError for Error {}
 
 #[cfg(test)]
 mod tests {
-    use super::{InputType, detect};
+    use super::{
+        CnmtContentType, InputType, content_type_label, detect, meta_type_name, segment_name,
+    };
 
     #[test]
     fn detect_with_a_pfs0_magic_returns_nsp() {
@@ -426,6 +678,56 @@ mod tests {
 
         //* Then
         assert_eq!(kind, InputType::Nsp);
+    }
+
+    #[test]
+    fn detect_with_a_kip1_magic_returns_kip() {
+        //* Given
+        let image = b"KIP1\x00\x00\x00\x00".to_vec();
+
+        //* When
+        let kind = detect(&image);
+
+        //* Then
+        assert_eq!(kind, InputType::Kip);
+    }
+
+    #[test]
+    fn segment_name_names_the_four_loaded_segments() {
+        //* Given
+        let indices = 0..4;
+
+        //* When
+        let names: Vec<&str> = indices.map(segment_name).collect();
+
+        //* Then
+        assert_eq!(names, ["text", "rodata", "data", "bss"]);
+    }
+
+    #[test]
+    fn meta_type_name_with_an_unmodelled_type_says_so() {
+        //* Given
+        // The reader reports a meta type it does not model as absent, and the label has to make
+        // that legible rather than pick a plausible-looking name.
+        let meta_type = None;
+
+        //* When
+        let name = meta_type_name(meta_type);
+
+        //* Then
+        assert_eq!(name, "(unrecognized)");
+    }
+
+    #[test]
+    fn content_type_label_with_a_known_type_names_it() {
+        //* Given
+        let content_type = Some(CnmtContentType::Program);
+
+        //* When
+        let label = content_type_label(content_type);
+
+        //* Then
+        assert_eq!(label, "Program");
     }
 
     #[test]
