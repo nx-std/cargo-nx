@@ -121,12 +121,36 @@ Options: `--keyset`, `--nspdir`, `--ncadir`, `--backupdir`, `--exefsdir`, `--rom
 **Note:** `main.npdm` and `control.nacp` are patched in place; the originals are copied into
 `--backupdir` first.
 
+**`hactool`** -- Read, verify, and extract an NCA, an NSP, or a KIP1.
+
+```
+cargo nx tool hactool [options] <file>
+```
+
+The read side of `hacbrewpack`. The container is detected from the file's contents unless
+`--intype` names it. An NCA is encrypted throughout, so opening one needs the keyset it was sealed
+with, taken from the same locations `hacbrewpack` searches; listing or extracting an NSP or a KIP1
+needs no keys.
+
+`--verify` reports each check separately: the header signature, every FS header hash, and every
+section's contents against the PFS0 hash table or IVFC tree covering them. On a package it also
+checks each archive against the content meta naming it, which needs the keyset.
+
+Options: `--keyset`, `--intype`, `--verify`, `--plaintext`, `--outdir`, `--exefsdir`, `--romfsdir`,
+`--section0dir`, `--section1dir`, `--section2dir`, `--section3dir`.
+
+**Note:** Only the second of an NCA's two signatures is checkable. The first is verified against a
+modulus that lives in the console, so a title packed by another toolchain reports an unverifiable
+signature while every hash still passes. An archive packed by `hacbrewpack` other than the program
+one carries no signature at all and is reported as `not signed` rather than failed.
+
 #### Intentional Behavior Differences
 
 The Rust implementations aim for practical compatibility with the original C tools from `switch-tools`, but include the following intentional differences:
 
 - **`nacptool --titleid` validation**: Requires exactly 16 hexadecimal digits, rejecting shorter or invalid inputs that the C version would parse using `scanf`'s `%016llx` format specifier.
 - **`hacbrewpack` builds in memory**: every intermediate is assembled in memory rather than staged through a temporary directory, so `--tempdir` is accepted for compatibility and ignored. Key derivation stops at the master keys: a keyset supplying only console-unique secrets is reported as missing the key it could not derive.
+- **`hactool` reads what this workspace writes**: NCA, NSP, and KIP1 only. Gamecard images (XCI), boot packages, savedata, and update partitions are out of scope, because nothing here builds them. A package's own metadata archive is the one file a content meta cannot cover, since it would have to list itself, so no hash in the package verifies it.
 
 For detailed package format documentation (NRO/NACP fields, NSP/NPDM configuration), see [`cargo-nx/README.md`](cargo-nx/README.md).
 
